@@ -43,10 +43,7 @@ const uploadsDir = path.join(__dirname, '../public/uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 app.use('/uploads', express.static(uploadsDir));
 
-const multerStorage = multer.diskStorage({
-  destination: (_, __, cb) => cb(null, uploadsDir),
-  filename: (_, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/[^a-z0-9.\-_]/gi, '_')}`),
-});
+const multerStorage = multer.memoryStorage();
 const upload = multer({ storage: multerStorage, limits: { fileSize: 20 * 1024 * 1024 } });
 
 // ── GROQ AI ────────────────────────────────────────────────────────────────────
@@ -311,15 +308,32 @@ ${context ? `DOCUMENT CONTEXT (from student's uploaded materials):\n${context}\n
 // ── UPLOAD ─────────────────────────────────────────────────────────────────────
 app.post('/api/upload', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file provided' });
-  const baseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
-  const fileUrl = `${baseUrl}/uploads/${req.file.filename}`;
-  const filePath = path.join(uploadsDir, req.file.filename);
+  
+  const fileExt = req.file.originalname.split('.').pop();
+  const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+  
+  // Upload to Supabase Storage
+  const { data: storageData, error: storageError } = await supabase.storage
+    .from('uploads')
+    .upload(fileName, req.file.buffer, {
+      contentType: req.file.mimetype,
+      upsert: false
+    });
+
+  if (storageError) {
+    console.error('Supabase storage upload error:', storageError);
+    return res.status(500).json({ error: 'Storage upload failed: ' + storageError.message });
+  }
+
+  const { data: publicUrlData } = supabase.storage.from('uploads').getPublicUrl(fileName);
+  const fileUrl = publicUrlData.publicUrl;
+
   let text = '';
   const mime = req.file.mimetype;
+  const buf = req.file.buffer;
 
   try {
     if (mime.includes('pdf')) {
-      const buf = fs.readFileSync(filePath);
       const pdfParse = require('pdf-parse');
       const parsed = await pdfParse(buf);
       text = parsed.text || '';
@@ -343,11 +357,11 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
         } catch (e) { console.error('OCR failed:', e); }
       }
     } else if (mime.startsWith('text/') || mime.includes('json')) {
-      text = fs.readFileSync(filePath, 'utf-8');
+      text = buf.toString('utf-8');
     } else if (mime.startsWith('image/')) {
       try {
         const Tesseract = require('tesseract.js');
-        const r = await Tesseract.recognize(fs.readFileSync(filePath), 'eng');
+        const r = await Tesseract.recognize(buf, 'eng');
         text = r?.data?.text || '';
       } catch { }
     }
@@ -382,16 +396,33 @@ app.post('/api/materials', authenticateToken, upload.single('file'), async (req:
   const file = req.file;
   if (!name || !file) return res.status(400).json({ error: 'Name and file required' });
 
-  const baseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
-  const fileUrl = `${baseUrl}/uploads/${file.filename}`;
+  const fileExt = file.originalname.split('.').pop();
+  const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+  
+  // Upload to Supabase Storage
+  const { data: storageData, error: storageError } = await supabase.storage
+    .from('uploads')
+    .upload(fileName, file.buffer, {
+      contentType: file.mimetype,
+      upsert: false
+    });
+
+  if (storageError) {
+    console.error('Supabase storage upload error:', storageError);
+    return res.status(500).json({ error: 'Storage upload failed: ' + storageError.message });
+  }
+
+  const { data: publicUrlData } = supabase.storage.from('uploads').getPublicUrl(fileName);
+  const fileUrl = publicUrlData.publicUrl;
+
   let text = '';
   try {
     const mime = file.mimetype;
     if (mime.includes('pdf')) {
       const pdfParse = require('pdf-parse');
-      text = (await pdfParse(fs.readFileSync(path.join(uploadsDir, file.filename)))).text || '';
+      text = (await pdfParse(file.buffer)).text || '';
     } else if (mime.startsWith('text/')) {
-      text = fs.readFileSync(path.join(uploadsDir, file.filename), 'utf-8');
+      text = file.buffer.toString('utf-8');
     }
     if (text.length > 20000) text = text.slice(0, 20000);
   } catch { }
