@@ -1,0 +1,5 @@
+This is a short study note about photosynthesis.
+Photosynthesis occurs in the chloroplasts of plant cells.
+It converts light energy into chemical energy stored in glucose.
+The general equation is: 6CO2 + 6H2O + light -> C6H12O6 + 6O2.
+Key stages: light-dependent reactions and the Calvin cycle.
