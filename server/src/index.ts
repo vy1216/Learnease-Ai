@@ -28,6 +28,7 @@ const allowedOrigins = new Set([
   'http://localhost:8081',
   'http://localhost:3000',
   'https://v4learnease.vercel.app',
+  'https://learnease-ai-ten.vercel.app',
 ]);
 app.use(cors({
   origin: (origin, cb) => (!origin || allowedOrigins.has(origin) ? cb(null, true) : cb(new Error('CORS'))),
