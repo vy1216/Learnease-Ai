@@ -31,7 +31,13 @@ const allowedOrigins = new Set([
   'https://learnease-ai-ten.vercel.app',
 ]);
 app.use(cors({
-  origin: (origin, cb) => (!origin || allowedOrigins.has(origin) ? cb(null, true) : cb(new Error('CORS'))),
+  origin: (origin, cb) => {
+    if (!origin || allowedOrigins.has(origin) || origin.endsWith('.vercel.app')) {
+      cb(null, true);
+    } else {
+      cb(new Error('CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
